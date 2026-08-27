@@ -1,0 +1,61 @@
+name: Sync site navigation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-site-navigation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-navigation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add cross-page navigation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          pages = ['index.html', 'reality.html', 'cenx3.html']
+          wanted = [
+              ('cenx3.html', 'Cen X‑3 Reverse Engineer'),
+              ('compare.html', 'Theory vs Standard'),
+          ]
+          changed = False
+          for name in pages:
+              p = Path(name)
+              s = p.read_text()
+              start = s.find('<nav class="nav">')
+              end = s.find('</nav>', start)
+              if start < 0 or end < 0:
+                  raise RuntimeError(f'nav not found in {name}')
+              nav = s[start:end]
+              additions = []
+              for href, label in wanted:
+                  if f'href="{href}"' not in nav:
+                      additions.append(f'<a href="{href}">{label}</a>')
+              if additions:
+                  insert = nav.rfind('</div>')
+                  if insert < 0:
+                      raise RuntimeError(f'nav links container not found in {name}')
+                  nav = nav[:insert] + ''.join(additions) + nav[insert:]
+                  s = s[:start] + nav + s[end:]
+                  p.write_text(s)
+                  changed = True
+          print('navigation changed:', changed)
+          PY
+      - name: Commit navigation updates
+        run: |
+          if git diff --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html reality.html cenx3.html
+          git commit -m 'Link all interactive theory pages'
+          git push
